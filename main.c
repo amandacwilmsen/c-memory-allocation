@@ -3,12 +3,7 @@
 
 int main(void)
 {
-    /*
-     * Demonstra o uso do gerenciador com um pool de 100 bytes, isto e,
-     * uma unica regiao de memoria onde os blocos A, B e C serao alocados.
-     * As impressoes permitem acompanhar as alocacoes e os espacos livres;
-     * os testes automaticos, incluindo os de 50 blocos, ficam em testes.c.
-     */
+    /* Demonstra alocacoes e liberacoes em um pool de 100 bytes. */
     mymemory_t *memory = mymemory_init(100);
 
     if (memory == NULL) {
@@ -35,12 +30,7 @@ int main(void)
     mymemory_display(memory);
     mymemory_stats(memory);
 
-    /*
-     * A liberacao de A deixou seus 20 bytes disponiveis no inicio do pool.
-     * Como o First Fit percorre os espacos livres em ordem de endereco e
-     * escolhe o primeiro que comporta o pedido, C deve reutilizar o inicio
-     * dessa regiao para armazenar seus 10 bytes, sem deslocar B.
-     */
+    /* C deve reutilizar o inicio da lacuna deixada por A (First Fit). */
     
 printf("\nAlocando C com 10 bytes...\n");
 void *c = mymemory_alloc(memory, 10);
@@ -60,13 +50,7 @@ printf("C reutilizou o endereco de A? %s\n",
 
     printf("\nTESTE DE ALOCACOES INVALIDAS\n");
 
-    /*
-     * Verifica duas situacoes em que o gerenciador deve recusar o pedido:
-     * 101 bytes ultrapassam a capacidade total do pool, que e de 100 bytes;
-     * ja o pedido de 0 bytes e rejeitado por esta biblioteca por nao reservar
-     * uma regiao de tamanho positivo. Nos dois casos, o retorno esperado e
-     * NULL, indicando que nenhum novo bloco foi alocado.
-     */
+    /* Pedidos de 101 e 0 bytes devem retornar NULL. */
     void *grande = mymemory_alloc(memory, 101);
 
     printf("Alocacao de 101 bytes falhou? %s\n",
@@ -80,13 +64,7 @@ printf("C reutilizou o endereco de A? %s\n",
     mymemory_free(memory, b);
     mymemory_free(memory, c);
 
-    /*
-     * A ja foi liberado, e as chamadas acima liberam B e C. Assim, nao deve
-     * restar nenhuma alocacao: os 100 bytes do pool ficam disponiveis como
-     * uma unica regiao continua. As estatisticas devem mostrar 0 alocacoes,
-     * 0 bytes alocados, 100 bytes livres, maior bloco livre de 100 bytes e
-     * 1 fragmento livre.
-     */
+    /* Sem alocacoes, os 100 bytes formam uma unica regiao livre. */
     printf("\nEstatisticas apos liberar tudo:\n");
     mymemory_stats(memory);
 

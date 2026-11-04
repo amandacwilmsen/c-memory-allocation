@@ -1,6 +1,5 @@
 /*
- * Testes do gerenciador de memoria - First Fit.
- * Compile junto com mymemory.c, mas NAO com main.c:
+ * Testes do gerenciador First Fit. Compile sem main.c:
  * clang -std=c11 -Wall -Wextra -Wpedantic -g testes.c mymemory.c -o testes
  */
 #define _POSIX_C_SOURCE 200809L
@@ -11,7 +10,7 @@
 #include <unistd.h>
 #include "mymemory.h"
 
-/* Interrompe o teste com uma mensagem se uma condicao nao for verdadeira. */
+/* Encerra o teste se a condicao falhar. */
 static void verificar(int condicao, const char *mensagem)
 {
     if (!condicao) {
@@ -20,7 +19,7 @@ static void verificar(int condicao, const char *mensagem)
     }
 }
 
-/* Os cinco indicadores produzidos pela funcao publica mymemory_stats. */
+/* Indicadores de mymemory_stats. */
 typedef struct {
     size_t alocacoes;
     size_t alocada;
@@ -29,11 +28,7 @@ typedef struct {
     size_t fragmentos;
 } estatisticas_t;
 
-/*
- * mymemory_stats escreve em stdout, sem retornar uma estrutura. Para testar
- * a saida publica, capturamos o texto em um arquivo temporario POSIX.
- * O descritor de stdout e restaurado antes de continuar a execucao.
- */
+/* Captura mymemory_stats em arquivo temporario e restaura stdout. */
 static void capturar_estatisticas(mymemory_t *memory, char *texto,
     size_t capacidade)
 {
@@ -58,7 +53,7 @@ static void capturar_estatisticas(mymemory_t *memory, char *texto,
     verificar(fclose(captura) == 0, "fechar captura");
 }
 
-/* Converte a saida real da biblioteca em numeros para comparar as ordens. */
+/* Converte a saida de mymemory_stats em valores numericos. */
 static estatisticas_t ler_estatisticas(mymemory_t *memory)
 {
     char texto[256];
@@ -74,7 +69,7 @@ static estatisticas_t ler_estatisticas(mymemory_t *memory)
     return e;
 }
 
-/* Verifica valores conhecidos de pools vazios, cheios e fragmentados. */
+/* Compara as estatisticas com os valores esperados. */
 static void verificar_estatisticas(mymemory_t *memory, size_t alocacoes,
     size_t alocada, size_t livre, size_t maior, size_t fragmentos)
 {
@@ -92,10 +87,7 @@ static void verificar_estatisticas(mymemory_t *memory, size_t alocacoes,
     }
 }
 
-/*
- * A medida tem uma verificacao independente do total de bytes solicitados:
- * somamos os tamanhos das alocacoes ativas mantidos pelo proprio teste.
- */
+/* Valida as medicoes com os totais mantidos pelo teste. */
 static void verificar_medicao(estatisticas_t e, size_t qtd,
     size_t alocada_esperada, size_t tamanho_pool)
 {
@@ -110,12 +102,7 @@ static void verificar_medicao(estatisticas_t e, size_t qtd,
               "numero de regioes livres dentro do limite da lista");
 }
 
-/*
- * Confere a estrutura interna apos alocacoes e liberacoes: cada bloco deve
- * estar alinhado, ter tamanho positivo, permanecer dentro do pool e nao
- * se sobrepor ao anterior. A contagem tambem deve coincidir com a esperada,
- * para detectar registros perdidos, extras ou ciclos na lista.
- */
+/* Verifica alinhamento, limites, ordem, ausencia de sobreposicao e contagem. */
 static void verificar_lista(mymemory_t *memory, size_t quantidade_esperada)
 {
     verificar(memory != NULL && memory->pool != NULL, "pool valido");
@@ -166,33 +153,21 @@ static void teste_basico_e_liberacoes(void)
     memset(b, 0x22, 32);
     memset(c, 0x33, 16);
 
-    /*
-     * B fica entre A e C na lista. Sua liberacao deve ligar o registro de A
-     * diretamente ao de C, sem alterar os dados dos blocos que continuam
-     * alocados. Os valores gravados antes permitem conferir essa preservacao.
-     */
+    /* Libera B e verifica se os dados de A e C foram preservados. */
     mymemory_free(memory, b);
     verificar_lista(memory, 2);
     verificar(a[0] == 0x11 && c[0] == 0x33,
               "liberar B nao modifica A ou C");
     puts("OK: liberar o nodo do meio");
 
-    /*
-     * A permanece ocupado e B deixou uma lacuna de 32 bytes antes de C.
-     * O pedido de 8 bytes cabe nessa primeira lacuna, portanto o First Fit
-     * deve devolver o antigo endereco inicial de B.
-     */
+    /* O First Fit deve reutilizar o inicio da lacuna de B. */
     unsigned char *d = mymemory_alloc(memory, 8);
     verificar(d == b, "First Fit reutiliza o inicio da lacuna de B");
     memset(d, 0x44, 8);
     verificar_lista(memory, 3);
     puts("OK: reutilizar a lacuna do meio");
 
-    /*
-     * Somente o endereco inicial de um bloco atual identifica uma alocacao.
-     * Testa um endereco dentro de C, uma variavel fora do pool, um ponteiro
-     * NULL e um gerenciador NULL: nenhuma chamada deve remover blocos.
-     */
+    /* Ponteiros internos, externos ou NULL e gerenciador NULL devem ser ignorados. */
     int externo = 0;
     mymemory_free(memory, c + 1);
     mymemory_free(memory, &externo);
@@ -202,18 +177,14 @@ static void teste_basico_e_liberacoes(void)
     verificar(c[0] == 0x33, "ponteiros invalidos nao afetam C");
     puts("OK: ignorar ponteiros invalidos");
 
-    /*
-     * Liberar A deve atualizar o inicio da lista. Repetir a chamada antes
-     * de reutilizar esse endereco nao deve remover outro registro, pois A
-     * ja nao consta entre as alocacoes atuais.
-     */
+    /* Libera o primeiro nodo e verifica se a segunda liberacao e ignorada. */
     mymemory_free(memory, a);
     verificar_lista(memory, 2);
     mymemory_free(memory, a);
     verificar_lista(memory, 2);
     puts("OK: liberar o primeiro nodo e ignorar dupla liberacao");
 
-    /* Remove o ultimo nodo e, depois, o unico nodo restante. */
+    /* Remove o ultimo nodo e depois o unico restante. */
     mymemory_free(memory, c);
     verificar_lista(memory, 1);
     mymemory_free(memory, d);
@@ -227,7 +198,7 @@ static void teste_basico_e_liberacoes(void)
     verificar(mymemory_alloc(NULL, 10) == NULL,
               "gerenciador NULL deve retornar NULL");
 
-    /* Um pool vazio deve comportar um unico bloco de seu tamanho exato. */
+    /* Um unico bloco deve poder ocupar todo o pool vazio. */
     void *completo = mymemory_alloc(memory, 256);
     verificar(completo != NULL, "alocacao que ocupa todo o pool");
     verificar_lista(memory, 1);
@@ -246,11 +217,8 @@ static void teste_basico_e_liberacoes(void)
 static void teste_first_fit_e_fragmentacao(void)
 {
     /*
-     * u e a unidade de alinhamento usada pelo gerenciador. Pedir tamanhos
-     * multiplos de u evita sobras de alinhamento e facilita prever os valores.
-     * O pool sera preenchido assim: [4u][1u][2u][1u][6u]. Ao liberar os
-     * blocos de 4u, 2u e 6u, os de 1u permanecem como separadores, criando
-     * tres lacunas distintas para comparar a escolha das estrategias.
+     * Tamanhos multiplos do alinhamento u evitam sobras.
+     * O arranjo [4u][1u][2u][1u][6u] cria tres lacunas ao liberar 4u, 2u e 6u.
      */
     const size_t u = _Alignof(max_align_t);
     mymemory_t *memory = mymemory_init(14 * u);
@@ -269,11 +237,7 @@ static void teste_first_fit_e_fragmentacao(void)
     mymemory_free(memory, menor);
     mymemory_free(memory, maior);
     verificar_lista(memory, 2);
-    /*
-     * Restaram lacunas de 4u, 2u e 6u, totalizando 12u livres. Um pedido
-     * de 7u deve falhar: nenhuma regiao continua e grande o suficiente,
-     * mesmo que a soma do espaco livre ultrapasse o tamanho solicitado.
-     */
+    /* Ha 12u livres, mas nenhuma lacuna comporta 7u. */
     verificar_estatisticas(memory, 2, 2 * u, 12 * u, 6 * u, 3);
     verificar(mymemory_alloc(memory, 7 * u) == NULL,
               "fragmentacao impede pedido menor que o total livre");
@@ -287,11 +251,7 @@ static void teste_first_fit_e_fragmentacao(void)
     verificar_lista(memory, 3);
     verificar_estatisticas(memory, 3, 4 * u, 10 * u, 6 * u, 3);
 
-    /*
-     * Liberar cada separador deixa os espacos livres dos seus dois lados
-     * contiguos. As estatisticas devem reconhecer essas regioes como uma
-     * so, reduzindo a quantidade de fragmentos e atualizando o maior livre.
-     */
+    /* Liberar os separadores deve unir as lacunas contiguas. */
     mymemory_free(memory, separador_a);
     verificar_estatisticas(memory, 2, 3 * u, 11 * u, 6 * u, 2);
     mymemory_free(memory, separador_b);
@@ -301,10 +261,7 @@ static void teste_first_fit_e_fragmentacao(void)
     verificar_estatisticas(memory, 0, 0, 14 * u, 14 * u, 1);
     verificar(mymemory_alloc(memory, 14 * u) == memory->pool,
               "pool completo reutilizavel apos unir lacunas");
-    /*
-     * O bloco que ocupa todo o pool permanece alocado de proposito:
-     * cleanup deve liberar seu registro junto com o restante do gerenciador.
-     */
+    /* Verifica cleanup com um bloco ainda alocado. */
     mymemory_cleanup(memory);
     puts("OK: First Fit distinto de Best/Worst Fit e estatisticas fragmentadas");
 }
@@ -320,10 +277,8 @@ static void teste_estatisticas_com_alinhamento(void)
               "enderecos respeitam o alinhamento de max_align_t");
     verificar_lista(memory, 2);
     /*
-     * A ocupa u+1 bytes, mas B precisa comecar no deslocamento 2u para
-     * respeitar o alinhamento. Isso deixa u-1 bytes livres entre eles e
-     * 2u bytes ao final. As estatisticas devem incluir ambas as regioes;
-     * se u for 1, nao ha sobra entre os blocos, apenas a regiao final.
+     * Entre A e B sobram u-1 bytes; ao final, 2u.
+     * Se u for 1, apenas a regiao final e livre.
      */
     verificar_estatisticas(memory, 2, 2 * u + 1, 3 * u - 1, 2 * u,
                            u > 1 ? 2 : 1);
@@ -343,10 +298,8 @@ static void teste_cinquenta_blocos(int ordem, estatisticas_t resultado[3])
     size_t total_ativo = 0;
 
     /*
-     * Usa os sete tamanhos exemplificados no enunciado e acrescenta outros
-     * 43 tamanhos distintos, de 37 a 835 bytes (passos de 19 bytes).
-     * Assim, as cinco ordens testam os MESMOS 50 pedidos, de 10 a 1000
-     * bytes, de forma reprodutivel e sem depender de numeros aleatorios.
+     * Usa os mesmos 50 tamanhos nas cinco ordens: sete exemplos
+     * e outros 43 de 37 a 835 bytes, em passos de 19.
      */
     const size_t exemplos[] = {10, 25, 50, 100, 250, 500, 1000};
     const int qtd_exemplos = (int)(sizeof(exemplos) / sizeof(exemplos[0]));
@@ -363,11 +316,7 @@ static void teste_cinquenta_blocos(int ordem, estatisticas_t resultado[3])
             indices[i] = N - 1 - i;
         }
     } else if (ordem == 2 || ordem == 3) {
-        /*
-         * Reorganiza apenas os indices: ordem 2 aloca por tamanho crescente
-         * e ordem 3 por tamanho decrescente. O indice original identifica
-         * cada bloco, mantendo seu tamanho e seus dados associados a ele.
-         */
+        /* Ordena os indices por tamanho, preservando a identidade dos blocos. */
         for (int i = 1; i < N; i++) {
             int indice = indices[i];
             int j = i;
@@ -380,11 +329,7 @@ static void teste_cinquenta_blocos(int ordem, estatisticas_t resultado[3])
             indices[j] = indice;
         }
     } else if (ordem == 4) {
-        /*
-         * Multiplicar por 17 e tomar o resto por 50 produz uma ordem
-         * embaralhada reproduzivel. Como 17 e 50 nao tem divisor comum
-         * maior que 1, todos os indices de 0 a 49 aparecem uma unica vez.
-         */
+        /* Como 17 e 50 sao coprimos, (i * 17) % 50 percorre cada indice uma vez. */
         for (int i = 0; i < N; i++) {
             indices[i] = (i * 17) % N;
         }
@@ -406,11 +351,7 @@ static void teste_cinquenta_blocos(int ordem, estatisticas_t resultado[3])
     verificar_medicao(resultado[0], N, total_ativo, POOL_SIZE);
     puts("OK: alocar 50 blocos variados");
 
-    /*
-     * Libera os 25 blocos de indices impares, do maior indice ao menor.
-     * Os de indices pares continuam ocupados para verificar se liberacoes
-     * e novas alocacoes preservam os dados de blocos ainda em uso.
-     */
+    /* Libera os 25 indices impares em ordem decrescente e preserva os pares. */
     for (int i = N - 1; i >= 1; i -= 2) {
         mymemory_free(memory, blocos[i]);
         blocos[i] = NULL;
@@ -420,11 +361,7 @@ static void teste_cinquenta_blocos(int ordem, estatisticas_t resultado[3])
     resultado[1] = ler_estatisticas(memory);
     verificar_medicao(resultado[1], N / 2, total_ativo, POOL_SIZE);
 
-    /*
-     * Cada bloco recebeu o valor de seu indice mais 1 em todos os bytes.
-     * Conferir todo o conteudo dos blocos restantes ajuda a detectar se
-     * a liberacao de outros blocos alterou indevidamente seus dados.
-     */
+    /* Confere todos os bytes dos blocos restantes para detectar alteracoes. */
     for (int i = 0; i < N; i += 2) {
         for (size_t j = 0; j < tamanhos[i]; j++) {
             verificar(blocos[i][j] == (unsigned char)(i + 1),
@@ -469,9 +406,8 @@ static void teste_cinquenta_blocos(int ordem, estatisticas_t resultado[3])
 }
 
 /*
- * Tabela comparativa extraida da saida real de mymemory_stats.
- * A ultima coluna nao e uma nota de qualidade nem um indice universal:
- * indica qual parte da memoria fisicamente livre esta fora da maior regiao.
+ * Compara as estatisticas; a ultima coluna indica a fracao livre fora
+ * da maior regiao, sem medir eficiencia geral.
  */
 static void imprimir_comparativo(const char *ordens[5],
     estatisticas_t resultados[5][3])
@@ -507,7 +443,7 @@ static void imprimir_comparativo(const char *ordens[5],
 int main(void)
 {
     verificar(mymemory_init(0) == NULL, "pool de tamanho zero deve falhar");
-    /* A limpeza deve aceitar a ausencia de gerenciador sem acessar memoria. */
+    /* cleanup deve aceitar NULL. */
     mymemory_cleanup(NULL);
 
     teste_basico_e_liberacoes();
